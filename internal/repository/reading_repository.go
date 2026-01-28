@@ -12,19 +12,8 @@ type ReadingRepository struct {
 	db *sql.DB
 }
 
-func NewReadingRepository(db *sql.DB) *ReadingRepository {
+func New(db *sql.DB) *ReadingRepository {
 	return &ReadingRepository{db: db} //2
-}
-
-func (r *ReadingRepository) Exists(ctx context.Context, bookID int, userID int64) (bool, error) {
-	var ok bool
-	err := r.db.QueryRowContext(ctx, `
-		SELECT EXISTS(
-			SELECT 1 FROM book_readings
-			WHERE book_id = $1 AND user_id = $2
-		)
-	`, bookID, userID).Scan(&ok)
-	return ok, err
 }
 
 func (r *ReadingRepository) Insert(ctx context.Context, bookID int, userID int64, date time.Time) error {
