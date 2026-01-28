@@ -43,9 +43,9 @@ func main() {
 
 	bookRepo := repository.NewBookRepository(conn)
 	userRepo := repository.NewUserRepository(conn)
-	readingRepo := repository.NewReadingRepository(conn)
+	readingRepo := repository.New(conn)
 
-	lib := story.NewLibraryStory(bookRepo, userRepo, readingRepo)
+	lib := story.New(bookRepo, userRepo, readingRepo)
 
 	// 2) наличие по названию
 	ok, err := lib.HasBookTitle(ctx, "1984")
