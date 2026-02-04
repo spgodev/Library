@@ -2,27 +2,33 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"errors"
+
 	"library/internal/domain"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type UserRepository struct {
-	db *sql.DB
+	db *pgxpool.Pool
 }
 
-func NewUserRepository(db *sql.DB) *UserRepository {
+func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 	return &UserRepository{db: db}
 }
 
-func (r *UserRepository) GetIDByName(ctx context.Context, fullName string) (domain.User, error) {
+func (r *UserRepository) GetUserByName(ctx context.Context, fullName string) (domain.User, error) {
 	var u domain.User
-	err := r.db.QueryRowContext(ctx, `
-		SELECT id, full_name FROM users WHERE full_name = $1
+
+	err := r.db.QueryRow(ctx, `
+		SELECT id, full_name
+		FROM users
+		WHERE full_name = $1
 	`, fullName).Scan(&u.ID, &u.Name)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.User{}, domain.NotFoundError
 		}
 		return domain.User{}, err
@@ -32,14 +38,17 @@ func (r *UserRepository) GetIDByName(ctx context.Context, fullName string) (doma
 }
 
 func (r *UserRepository) Insert(ctx context.Context, fullName string) (domain.User, error) {
-	var id int64
-	err := r.db.QueryRowContext(ctx, `
+	var u domain.User
+
+	err := r.db.QueryRow(ctx, `
 		INSERT INTO users (full_name)
 		VALUES ($1)
-		RETURNING id
-		    `, fullName).Scan(&id)
+		RETURNING id, full_name
+	`, fullName).Scan(&u.ID, &u.Name)
+
 	if err != nil {
 		return domain.User{}, err
 	}
-	return domain.User{ID: id, Name: fullName}, nil
+
+	return u, nil
 }

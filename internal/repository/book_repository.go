@@ -2,38 +2,41 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 
 	"library/internal/domain"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type BookRepository struct {
-	db *sql.DB
+	db *pgxpool.Pool
 }
 
-func NewBookRepository(db *sql.DB) *BookRepository {
+func NewBookRepository(db *pgxpool.Pool) *BookRepository {
 	return &BookRepository{db: db}
 }
 
-func (r *BookRepository) ExistsByID(ctx context.Context, id int) (bool, error) {
-	var ok bool
-	err := r.db.QueryRowContext(ctx,
-		`SELECT EXISTS(SELECT 1 FROM books WHERE id = $1)`, id,
-	).Scan(&ok)
-	return ok, err
-}
+func scanBooks(rows pgx.Rows) ([]domain.Book, error) {
+	defer rows.Close()
 
-func (r *BookRepository) ExistsByTitle(ctx context.Context, title string) (bool, error) {
-	var ok bool
-	err := r.db.QueryRowContext(ctx, `
-		SELECT EXISTS(SELECT 1 FROM books WHERE title = $1)
-	`, title).Scan(&ok)
-	return ok, err
+	out := make([]domain.Book, 0)
+	for rows.Next() {
+		var b domain.Book
+		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.Year, &b.Pages); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (r *BookRepository) Insert(ctx context.Context, b domain.Book) (domain.Book, error) {
 	var out domain.Book
-	err := r.db.QueryRowContext(ctx, `
+	err := r.db.QueryRow(ctx, `
 		INSERT INTO books (title, author, year, pages)
 		VALUES ($1,$2,$3,$4)
 		RETURNING id, title, author, year, pages
@@ -46,8 +49,8 @@ func (r *BookRepository) Insert(ctx context.Context, b domain.Book) (domain.Book
 	return out, nil
 }
 
-func (r *BookRepository) FindByTitle(ctx context.Context, title string) ([]domain.Book, error) {
-	rows, err := r.db.QueryContext(ctx, `
+func (r *BookRepository) FindAllByTitle(ctx context.Context, title string) ([]domain.Book, error) {
+	rows, err := r.db.Query(ctx, `
 		SELECT id, title, author, year, pages
 		FROM books
 		WHERE title = $1
@@ -56,21 +59,11 @@ func (r *BookRepository) FindByTitle(ctx context.Context, title string) ([]domai
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	out := make([]domain.Book, 0)
-	for rows.Next() {
-		var b domain.Book
-		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.Year, &b.Pages); err != nil {
-			return nil, err
-		}
-		out = append(out, b)
-	}
-	return out, rows.Err()
+	return scanBooks(rows)
 }
 
-func (r *BookRepository) ListByYear(ctx context.Context, year int) ([]domain.Book, error) {
-	rows, err := r.db.QueryContext(ctx, `
+func (r *BookRepository) FindAllByYear(ctx context.Context, year int) ([]domain.Book, error) {
+	rows, err := r.db.Query(ctx, `
 		SELECT id, title, author, year, pages
 		FROM books
 		WHERE year = $1
@@ -79,21 +72,11 @@ func (r *BookRepository) ListByYear(ctx context.Context, year int) ([]domain.Boo
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	out := make([]domain.Book, 0)
-	for rows.Next() {
-		var b domain.Book
-		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.Year, &b.Pages); err != nil {
-			return nil, err
-		}
-		out = append(out, b)
-	}
-	return out, rows.Err()
+	return scanBooks(rows)
 }
 
-func (r *BookRepository) ListByAuthor(ctx context.Context, author string) ([]domain.Book, error) {
-	rows, err := r.db.QueryContext(ctx, `
+func (r *BookRepository) FindAllByAuthor(ctx context.Context, author string) ([]domain.Book, error) {
+	rows, err := r.db.Query(ctx, `
 		SELECT id, title, author, year, pages
 		FROM books
 		WHERE author = $1
@@ -102,17 +85,7 @@ func (r *BookRepository) ListByAuthor(ctx context.Context, author string) ([]dom
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	out := make([]domain.Book, 0)
-	for rows.Next() {
-		var b domain.Book
-		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.Year, &b.Pages); err != nil {
-			return nil, err
-		}
-		out = append(out, b)
-	}
-	return out, rows.Err()
+	return scanBooks(rows)
 }
 
 func (r *BookRepository) ListSortedByYear(ctx context.Context, asc bool) ([]domain.Book, error) {
@@ -121,7 +94,7 @@ func (r *BookRepository) ListSortedByYear(ctx context.Context, asc bool) ([]doma
 		order = "DESC"
 	}
 
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.db.Query(ctx, `
 		SELECT id, title, author, year, pages
 		FROM books
 		ORDER BY year `+order+`, id ASC
@@ -129,21 +102,11 @@ func (r *BookRepository) ListSortedByYear(ctx context.Context, asc bool) ([]doma
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	out := make([]domain.Book, 0)
-	for rows.Next() {
-		var b domain.Book
-		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.Year, &b.Pages); err != nil {
-			return nil, err
-		}
-		out = append(out, b)
-	}
-	return out, rows.Err()
+	return scanBooks(rows)
 }
 
-func (r *BookRepository) ListAll(ctx context.Context) ([]domain.Book, error) {
-	rows, err := r.db.QueryContext(ctx, `
+func (r *BookRepository) GetAll(ctx context.Context) ([]domain.Book, error) {
+	rows, err := r.db.Query(ctx, `
 		SELECT id, title, author, year, pages
 		FROM books
 		ORDER BY id
@@ -151,15 +114,5 @@ func (r *BookRepository) ListAll(ctx context.Context) ([]domain.Book, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	out := make([]domain.Book, 0)
-	for rows.Next() {
-		var b domain.Book
-		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.Year, &b.Pages); err != nil {
-			return nil, err
-		}
-		out = append(out, b)
-	}
-	return out, rows.Err()
+	return scanBooks(rows)
 }

@@ -2,30 +2,38 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	"library/internal/domain"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type ReadingRepository struct {
-	db *sql.DB
+	db *pgxpool.Pool
 }
 
-func New(db *sql.DB) *ReadingRepository {
-	return &ReadingRepository{db: db} //2
+func New(db *pgxpool.Pool) *ReadingRepository {
+	return &ReadingRepository{db: db}
 }
 
-func (r *ReadingRepository) Insert(ctx context.Context, bookID int, userID int64, date time.Time) error {
-	_, err := r.db.ExecContext(ctx, `
+func (r *ReadingRepository) Insert(ctx context.Context, bookID int64, userID int64, date time.Time) (domain.BookReading, error) {
+	var br domain.BookReading
+
+	err := r.db.QueryRow(ctx, `
 		INSERT INTO book_readings (book_id, user_id, read_date)
 		VALUES ($1,$2,$3::date)
-	`, bookID, userID, date)
-	return err
+		RETURNING book_id, user_id, read_date
+	`, bookID, userID, date).Scan(&br.BookID, &br.UserID, &br.ReadDate)
+
+	if err != nil {
+		return domain.BookReading{}, err
+	}
+	return br, nil
 }
 
-func (r *ReadingRepository) ListByBook(ctx context.Context, bookID int) ([]domain.ReadingInfo, error) {
-	rows, err := r.db.QueryContext(ctx, `
+func (r *ReadingRepository) ListByBook(ctx context.Context, bookID int64) ([]domain.ReadingInfo, error) {
+	rows, err := r.db.Query(ctx, `
 		SELECT u.full_name, br.read_date
 		FROM book_readings br
 		JOIN users u ON u.id = br.user_id
@@ -37,7 +45,7 @@ func (r *ReadingRepository) ListByBook(ctx context.Context, bookID int) ([]domai
 	}
 	defer rows.Close()
 
-	var out []domain.ReadingInfo
+	out := make([]domain.ReadingInfo, 0)
 	for rows.Next() {
 		var ri domain.ReadingInfo
 		if err := rows.Scan(&ri.User, &ri.Date); err != nil {
@@ -45,5 +53,8 @@ func (r *ReadingRepository) ListByBook(ctx context.Context, bookID int) ([]domai
 		}
 		out = append(out, ri)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

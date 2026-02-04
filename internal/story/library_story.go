@@ -8,28 +8,6 @@ import (
 	"library/internal/domain"
 )
 
-// интерфейсы вместо конкретных struct-репозиториев (для тестов)
-type BookRepo interface {
-	ListAll(ctx context.Context) ([]domain.Book, error)
-	ExistsByID(ctx context.Context, id int) (bool, error)
-	Insert(ctx context.Context, b domain.Book) (domain.Book, error)
-	ExistsByTitle(ctx context.Context, title string) (bool, error)
-	FindByTitle(ctx context.Context, title string) ([]domain.Book, error)
-	ListByYear(ctx context.Context, year int) ([]domain.Book, error)
-	ListByAuthor(ctx context.Context, author string) ([]domain.Book, error)
-	ListSortedByYear(ctx context.Context, asc bool) ([]domain.Book, error)
-}
-
-type UserRepo interface {
-	GetIDByName(ctx context.Context, fullName string) (domain.User, error)
-	Insert(ctx context.Context, fullName string) (domain.User, error)
-}
-
-type ReadingRepo interface {
-	Insert(ctx context.Context, bookID int, userID int64, date time.Time) error
-	ListByBook(ctx context.Context, bookID int) ([]domain.ReadingInfo, error)
-}
-
 type LibraryStory struct {
 	books    BookRepo
 	users    UserRepo
@@ -45,7 +23,7 @@ func (s *LibraryStory) AddBook(ctx context.Context, book domain.Book) (domain.Bo
 }
 
 func (s *LibraryStory) HasBookTitle(ctx context.Context, title string) (bool, error) {
-	books, err := s.books.FindByTitle(ctx, title)
+	books, err := s.books.FindAllByTitle(ctx, title)
 	if err != nil {
 		return false, err
 	}
@@ -53,49 +31,45 @@ func (s *LibraryStory) HasBookTitle(ctx context.Context, title string) (bool, er
 }
 
 func (s *LibraryStory) FindBookByTitle(ctx context.Context, title string) ([]domain.Book, error) {
-	return s.books.FindByTitle(ctx, title)
+	return s.books.FindAllByTitle(ctx, title)
 }
 
-func (s *LibraryStory) MarkAsRead(ctx context.Context, bookID int, userFullName string, date time.Time) error {
-	u, err := s.users.GetIDByName(ctx, userFullName)
+func (s *LibraryStory) MarkAsRead(ctx context.Context, bookID int64, userFullName string, date time.Time) (domain.BookReading, error) {
+	u, err := s.users.GetUserByName(ctx, userFullName)
 	if err != nil {
 		if errors.Is(err, domain.NotFoundError) {
 			u, err = s.users.Insert(ctx, userFullName)
 			if err != nil {
-				return err
+				return domain.BookReading{}, err
 			}
 		} else {
-			return err
+			return domain.BookReading{}, err
 		}
 	}
 
-	err = s.readings.Insert(ctx, bookID, u.ID, date)
-	return err
+	return s.readings.Insert(ctx, bookID, u.ID, date)
 }
 
 func (s *LibraryStory) GetBooksByYear(ctx context.Context, year int) ([]domain.Book, error) {
-	return s.books.ListByYear(ctx, year)
+	return s.books.FindAllByYear(ctx, year)
 }
 
 func (s *LibraryStory) GetBooksByAuthor(ctx context.Context, author string) ([]domain.Book, error) {
-	return s.books.ListByAuthor(ctx, author)
+	return s.books.FindAllByAuthor(ctx, author)
 }
 
 func (s *LibraryStory) GetBooksSortedByYear(ctx context.Context, asc bool) ([]domain.Book, error) {
 	return s.books.ListSortedByYear(ctx, asc)
 }
 
-func (s *LibraryStory) GetReadersByBook(ctx context.Context, bookID int) ([]domain.ReadingInfo, error) {
+func (s *LibraryStory) GetReadersByBook(ctx context.Context, bookID int64) ([]domain.ReadingInfo, error) {
 	return s.readings.ListByBook(ctx, bookID)
 }
 
 func (s *LibraryStory) LoadLibrary(ctx context.Context, name string) (*domain.Library, error) {
-	books, err := s.books.ListAll(ctx)
+	books, err := s.books.GetAll(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &domain.Library{
-		Name:  name,
-		Books: books,
-	}, nil
+	return &domain.Library{Name: name, Books: books}, nil
 }

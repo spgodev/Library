@@ -2,17 +2,18 @@ package app
 
 import (
 	"context"
-	"database/sql"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func Open(ctx context.Context, driver, dsn string) (*sql.DB, error) {
-	conn, err := sql.Open(driver, dsn)
+func Open(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		return nil, err
 	}
-	if err := conn.PingContext(ctx); err != nil {
-		_ = conn.Close()
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
 		return nil, err
 	}
-	return conn, nil
+	return pool, nil
 }
