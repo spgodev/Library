@@ -1,8 +1,9 @@
 package domain
 
 type Library struct {
-	Name  string
-	Books []Book
+	ID    int64  `json:"id"`
+	Name  string `json:"name"`
+	Books []Book `json:"books,omitempty"`
 }
 
 func (l *Library) HasTitle(title string) bool {

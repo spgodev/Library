@@ -1,6 +1,7 @@
 package app
 
 import (
+	"log"
 	"path/filepath"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -16,6 +17,7 @@ func RunMigrations(dsn string) error {
 	migrationsPath := "file://" + filepath.ToSlash(abs)
 
 	m, err := migrate.New(migrationsPath, dsn)
+	log.Println("migrationsPath:", migrationsPath)
 	if err != nil {
 		return err
 	}

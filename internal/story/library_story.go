@@ -9,13 +9,18 @@ import (
 )
 
 type LibraryStory struct {
-	books    BookRepo
-	users    UserRepo
-	readings ReadingRepo
+	books     BookRepo
+	users     UserRepo
+	readings  ReadingRepo
+	libraries LibraryRepo
 }
 
-func New(books BookRepo, users UserRepo, readings ReadingRepo) *LibraryStory {
-	return &LibraryStory{books: books, users: users, readings: readings}
+func New(books BookRepo, users UserRepo, readings ReadingRepo, libraries LibraryRepo) *LibraryStory {
+	return &LibraryStory{books: books, users: users, readings: readings, libraries: libraries}
+}
+
+func (s *LibraryStory) CreateLibrary(ctx context.Context, name string) (domain.Library, error) {
+	return s.libraries.Insert(ctx, name)
 }
 
 func (s *LibraryStory) AddBook(ctx context.Context, book domain.Book) (domain.Book, error) {
@@ -66,10 +71,63 @@ func (s *LibraryStory) GetReadersByBook(ctx context.Context, bookID int64) ([]do
 	return s.readings.ListByBook(ctx, bookID)
 }
 
+// 1
 func (s *LibraryStory) LoadLibrary(ctx context.Context, name string) (*domain.Library, error) {
 	books, err := s.books.GetAll(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return &domain.Library{Name: name, Books: books}, nil
+}
+
+// 2
+func (s *LibraryStory) AddBookToLibrary(ctx context.Context, libraryID int64, b domain.Book) (domain.Book, error) {
+	b.LibraryID = libraryID
+	return s.books.Insert(ctx, b)
+}
+
+// 3
+func (s *LibraryStory) AddUserToLibrary(ctx context.Context, libraryID int64, fullName string) (domain.User, error) {
+	return s.users.InsertIntoLibrary(ctx, libraryID, fullName)
+}
+
+// 4
+func (s *LibraryStory) GetBooksByLibrary(ctx context.Context, libraryID int64) ([]domain.Book, error) {
+	return s.books.GetAllByLibraryID(ctx, libraryID)
+}
+
+// 5
+func (s *LibraryStory) GetBooksByAuthorInLibrary(ctx context.Context, libraryID int64, author string) ([]domain.Book, error) {
+	return s.books.FindAllByAuthorInLibrary(ctx, libraryID, author)
+}
+
+// 6
+func (s *LibraryStory) GetBooksByFilters(ctx context.Context, libraryID int64, year *int, authorSubstr *string, titleSubstr *string) ([]domain.Book, error) {
+	return s.books.FindByFilters(ctx, libraryID, year, authorSubstr, titleSubstr)
+}
+
+// 7
+func (s *LibraryStory) AddReading(ctx context.Context, libraryID, userID, bookID int64, date time.Time) (domain.BookReading, error) {
+	if _, err := s.users.GetByIDInLibrary(ctx, libraryID, userID); err != nil {
+		return domain.BookReading{}, err
+	}
+
+	ok, err := s.books.ExistsInLibrary(ctx, libraryID, bookID)
+	if err != nil {
+		return domain.BookReading{}, err
+	}
+	if !ok {
+		return domain.BookReading{}, domain.NotFoundError
+	}
+
+	return s.readings.Insert(ctx, bookID, userID, date)
+}
+
+// 8
+func (s *LibraryStory) GetReadingsByUser(ctx context.Context, libraryID, userID int64) ([]domain.ReadBookItem, error) {
+	_, err := s.users.GetByIDInLibrary(ctx, libraryID, userID)
+	if err != nil {
+		return nil, err
+	}
+	return s.readings.ListReadingsByUser(ctx, libraryID, userID)
 }

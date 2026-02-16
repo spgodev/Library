@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"library/internal/domain"
 
@@ -23,7 +25,7 @@ func scanBooks(rows pgx.Rows) ([]domain.Book, error) {
 	out := make([]domain.Book, 0)
 	for rows.Next() {
 		var b domain.Book
-		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.Year, &b.Pages); err != nil {
+		if err := rows.Scan(&b.ID, &b.LibraryID, &b.Title, &b.Author, &b.Year, &b.Pages); err != nil {
 			return nil, err
 		}
 		out = append(out, b)
@@ -37,11 +39,11 @@ func scanBooks(rows pgx.Rows) ([]domain.Book, error) {
 func (r *BookRepository) Insert(ctx context.Context, b domain.Book) (domain.Book, error) {
 	var out domain.Book
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO books (title, author, year, pages)
-		VALUES ($1,$2,$3,$4)
-		RETURNING id, title, author, year, pages
-	`, b.Title, b.Author, b.Year, b.Pages).Scan(
-		&out.ID, &out.Title, &out.Author, &out.Year, &out.Pages,
+		INSERT INTO books (library_id, title, author, year, pages)
+		VALUES ($1,$2,$3,$4,$5)
+		RETURNING id, library_id, title, author, year, pages
+	`, b.LibraryID, b.Title, b.Author, b.Year, b.Pages).Scan(
+		&out.ID, &out.LibraryID, &out.Title, &out.Author, &out.Year, &out.Pages,
 	)
 	if err != nil {
 		return domain.Book{}, err
@@ -51,7 +53,7 @@ func (r *BookRepository) Insert(ctx context.Context, b domain.Book) (domain.Book
 
 func (r *BookRepository) FindAllByTitle(ctx context.Context, title string) ([]domain.Book, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, title, author, year, pages
+		SELECT id, library_id, title, author, year, pages
 		FROM books
 		WHERE title = $1
 		ORDER BY id
@@ -64,7 +66,7 @@ func (r *BookRepository) FindAllByTitle(ctx context.Context, title string) ([]do
 
 func (r *BookRepository) FindAllByYear(ctx context.Context, year int) ([]domain.Book, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, title, author, year, pages
+		SELECT id, library_id, title, author, year, pages
 		FROM books
 		WHERE year = $1
 		ORDER BY id
@@ -77,7 +79,7 @@ func (r *BookRepository) FindAllByYear(ctx context.Context, year int) ([]domain.
 
 func (r *BookRepository) FindAllByAuthor(ctx context.Context, author string) ([]domain.Book, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, title, author, year, pages
+		SELECT id, library_id, title, author, year, pages
 		FROM books
 		WHERE author = $1
 		ORDER BY id
@@ -95,7 +97,7 @@ func (r *BookRepository) ListSortedByYear(ctx context.Context, asc bool) ([]doma
 	}
 
 	rows, err := r.db.Query(ctx, `
-		SELECT id, title, author, year, pages
+		SELECT id, library_id, title, author, year, pages
 		FROM books
 		ORDER BY year `+order+`, id ASC
 	`)
@@ -107,7 +109,7 @@ func (r *BookRepository) ListSortedByYear(ctx context.Context, asc bool) ([]doma
 
 func (r *BookRepository) GetAll(ctx context.Context) ([]domain.Book, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, title, author, year, pages
+		SELECT id, library_id, title, author, year, pages
 		FROM books
 		ORDER BY id
 	`)
@@ -115,4 +117,80 @@ func (r *BookRepository) GetAll(ctx context.Context) ([]domain.Book, error) {
 		return nil, err
 	}
 	return scanBooks(rows)
+}
+
+func (r *BookRepository) GetAllByLibraryID(ctx context.Context, libraryID int64) ([]domain.Book, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, library_id, title, author, year, pages
+		FROM books
+		WHERE library_id = $1
+		ORDER BY id
+	`, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	return scanBooks(rows)
+}
+
+func (r *BookRepository) FindAllByAuthorInLibrary(ctx context.Context, libraryID int64, author string) ([]domain.Book, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, library_id, title, author, year, pages
+		FROM books
+		WHERE library_id = $1 AND author = $2
+		ORDER BY id
+	`, libraryID, author)
+	if err != nil {
+		return nil, err
+	}
+	return scanBooks(rows)
+}
+func (r *BookRepository) FindByFilters(ctx context.Context, libraryID int64, year *int, authorSubstr *string, titleSubstr *string) ([]domain.Book, error) {
+	query := `
+		SELECT id, library_id, title, author, year, pages
+		FROM books
+		WHERE library_id = $1
+	`
+	args := []any{libraryID}
+	n := 1
+
+	if year != nil {
+		n++
+		query += fmt.Sprintf(" AND year = $%d", n)
+		args = append(args, *year)
+	}
+	if authorSubstr != nil && strings.TrimSpace(*authorSubstr) != "" {
+		n++
+		query += fmt.Sprintf(" AND author ILIKE $%d", n)
+		args = append(args, "%"+strings.TrimSpace(*authorSubstr)+"%")
+	}
+	if titleSubstr != nil && strings.TrimSpace(*titleSubstr) != "" {
+		n++
+		query += fmt.Sprintf(" AND title ILIKE $%d", n)
+		args = append(args, "%"+strings.TrimSpace(*titleSubstr)+"%")
+	}
+
+	query += " ORDER BY id"
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	return scanBooks(rows)
+}
+
+func (r *BookRepository) ExistsInLibrary(ctx context.Context, libraryID, bookID int64) (bool, error) {
+	var id int64
+	err := r.db.QueryRow(ctx, `
+		SELECT id
+		FROM books
+		WHERE id = $1 AND library_id = $2
+	`, bookID, libraryID).Scan(&id)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }

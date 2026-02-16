@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS books (
 
 CREATE TABLE IF NOT EXISTS users (
                                      id        BIGSERIAL PRIMARY KEY,
-                                     full_name TEXT NOT NULL UNIQUE
+                                     full_name TEXT NOT NULL
 );
 
 
